@@ -4,9 +4,11 @@ import {
   RotateCcw, ShieldAlert, Cpu, Heart, CheckCircle2, 
   Lightbulb, RefreshCw, Layers, Calendar, Award, Moon, Brain, Bot, User 
 } from 'lucide-react';
+import { Session } from '@supabase/supabase-js';
 
 import { CalendarEvent, UserProfile, ChatMessage, DiaryEntry, RebalanceProposal } from './types';
 import { translations } from './translations';
+import { supabase } from './lib/supabase';
 import SplashAndLogin from './components/SplashAndLogin';
 import OnboardingProfile from './components/OnboardingProfile';
 import CalendarSync from './components/CalendarSync';
@@ -51,28 +53,105 @@ const eventDescMap: Record<string, string> = {
   '프로젝트 회의': '스마트 일정 조율 아키텍처 점검'
 };
 
+const defaultProfile: UserProfile = {
+  name: '김서연',
+  motto: '오늘도 나만의 리듬을 찾아서...',
+  avatar: 'https://lh3.googleusercontent.com/aida-public/AB6AXuB9DX0VW9dWt0T4tD0dDQAe-UvLp5KFaNjDTW4hNunP-ZUz3vUpt2ouEw5WRfE53VY4M4GdFBE2LzZ_22RPy5uQXZ0CaJvTDyLkmJs7gxg7KRi4sFgpSfwmR1L70a0lT2h4zJpfFjrxyD9qofp3HH_Z5PdXNbfknnkFm9tD0o5E8olSMej5ILtqnltWVgd_GLfEOOxWvm16cXNSnFZVkWnzhTJw8zB4aDwT96nEGqBhnfiGJ08KRVSZNZ_Y_u6FHDueRnSWsQjqyJ4P',
+  streak: 12,
+  avgFlowTime: 4.2,
+  isPremium: true,
+  googleSynced: true,
+  appleSynced: false,
+  language: 'ko',
+  theme: 'organic'
+};
+
+async function loadProfile(userId: string): Promise<UserProfile> {
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('*')
+    .eq('id', userId)
+    .single()
+
+  if (error || !data) {
+    const { data: { user } } = await supabase.auth.getUser()
+    const fallback: UserProfile = {
+      name: (user?.user_metadata?.name as string) || 'User',
+      motto: '',
+      avatar: `https://api.dicebear.com/7.x/adventurer/svg?seed=${encodeURIComponent((user?.user_metadata?.name as string) || 'avatar')}`,
+      streak: 0,
+      avgFlowTime: 0,
+      isPremium: false,
+      googleSynced: false,
+      appleSynced: false,
+      language: 'ko',
+      theme: 'organic'
+    }
+    await supabase.from('profiles').upsert({
+      id: userId,
+      name: fallback.name,
+      avatar_url: fallback.avatar,
+      language: fallback.language,
+      theme: fallback.theme,
+    })
+    return fallback
+  }
+
+  return {
+    name: data.name,
+    motto: data.motto || '',
+    avatar: data.avatar_url || `https://api.dicebear.com/7.x/adventurer/svg?seed=${encodeURIComponent(data.name)}`,
+    streak: data.streak || 0,
+    avgFlowTime: data.avg_flow_time || 0,
+    isPremium: data.is_premium || false,
+    googleSynced: data.google_synced || false,
+    appleSynced: data.apple_synced || false,
+    language: data.language || 'ko',
+    theme: data.theme || 'organic'
+  }
+}
+
 export default function App() {
-  // Navigation Screens: 'Splash' | 'Onboarding' | 'CalendarSync' | 'MainTabs' | 'AddEvent'
+  const [session, setSession] = useState<Session | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
+
+  // Navigation Screens
   const [currentScreen, setCurrentScreen] = useState<'Splash' | 'Onboarding' | 'CalendarSync' | 'MainTabs' | 'AddEvent'>('Splash');
   const [activeTab, setActiveTab] = useState<'schedule' | 'stress' | 'diary' | 'coach' | 'summary' | 'profile'>('schedule');
 
-  // React Native Code Tab state
   const [activeCodeTab, setActiveCodeTab] = useState<'App.js' | 'package.json' | 'app.json'>('App.js');
   const [copied, setCopied] = useState(false);
 
-  // Profile State
-  const [profile, setProfile] = useState<UserProfile>({
-    name: '김서연',
-    motto: '오늘도 나만의 리듬을 찾아서...',
-    avatar: 'https://lh3.googleusercontent.com/aida-public/AB6AXuB9DX0VW9dWt0T4tD0dDQAe-UvLp5KFaNjDTW4hNunP-ZUz3vUpt2ouEw5WRfE53VY4M4GdFBE2LzZ_22RPy5uQXZ0CaJvTDyLkmJs7gxg7KRi4sFgpSfwmR1L70a0lT2h4zJpfFjrxyD9qofp3HH_Z5PdXNbfknnkFm9tD0o5E8olSMej5ILtqnltWVgd_GLfEOOxWvm16cXNSnFZVkWnzhTJw8zB4aDwT96nEGqBhnfiGJ08KRVSZNZ_Y_u6FHDueRnSWsQjqyJ4P',
-    streak: 12,
-    avgFlowTime: 4.2,
-    isPremium: true,
-    googleSynced: true,
-    appleSynced: false,
-    language: 'ko',
-    theme: 'organic'
-  });
+  const [profile, setProfile] = useState<UserProfile>(defaultProfile);
+
+  // Auth session management
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session: s } }) => {
+      setSession(s)
+      setAuthLoading(false)
+      if (s) {
+        loadProfile(s.user.id).then(p => {
+          setProfile(p)
+          setCurrentScreen(p.motto ? 'MainTabs' : 'Onboarding')
+        })
+      }
+    })
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, s) => {
+      setSession(s)
+      if (event === 'SIGNED_IN' && s) {
+        loadProfile(s.user.id).then(p => {
+          setProfile(p)
+          setCurrentScreen(p.motto ? 'MainTabs' : 'Onboarding')
+        })
+      } else if (event === 'SIGNED_OUT') {
+        setProfile(defaultProfile)
+        setCurrentScreen('Splash')
+      }
+    })
+
+    return () => subscription.unsubscribe()
+  }, [])
 
   const themes = {
     organic: {
@@ -264,8 +343,29 @@ export default function App() {
     // update state
   };
 
-  const onUpdateProfile = (updated: Partial<UserProfile>) => {
-    setProfile(prev => ({ ...prev, ...updated }));
+  const onUpdateProfile = async (updated: Partial<UserProfile>) => {
+    const merged = { ...profile, ...updated }
+    setProfile(merged)
+
+    if (session) {
+      await supabase.from('profiles').upsert({
+        id: session.user.id,
+        name: merged.name,
+        motto: merged.motto,
+        avatar_url: merged.avatar,
+        streak: merged.streak,
+        avg_flow_time: merged.avgFlowTime,
+        is_premium: merged.isPremium,
+        google_synced: merged.googleSynced,
+        apple_synced: merged.appleSynced,
+        language: merged.language,
+        theme: merged.theme,
+      })
+    }
+  };
+
+  const handleSignOut = async () => {
+    await supabase.auth.signOut()
   };
 
   // Simulated code viewer file map
@@ -507,10 +607,7 @@ export default function App() {
                       {activeTab === 'profile' && (
                         <UserProfileView 
                           profile={profile}
-                          onLogout={() => {
-                            setCurrentScreen('Splash');
-                            setActiveTab('schedule');
-                          }}
+                          onLogout={handleSignOut}
                           onTogglePremium={handleTogglePremium}
                           onNavigateToSync={() => {
                             setCurrentScreen('CalendarSync');

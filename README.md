@@ -1,20 +1,36 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://ai.google.dev/static/site-assets/images/share-ais-513315318.png" />
-</div>
+# 장단:음 (Jangdan:um) / RebalAI
 
-# Run and deploy your AI Studio app
+An AI-powered daily rhythm and schedule balancing application.
 
-This contains everything you need to run your app locally.
+## Structure
 
-View your app in AI Studio: https://ai.studio/apps/920be876-073e-4ea1-bf50-d9dfe2e37a3d
+```
+├── frontend/          React + TypeScript + Vite web app
+│   ├── src/           UI components, screens, state
+│   ├── expo/          React Native / Expo version
+│   └── ...
+├── backend/           Express + Supabase API server
+│   └── src/           Routes, middleware, services
+└── ...
+```
 
-## Run Locally
+## Getting Started
 
-**Prerequisites:**  Node.js
+### Frontend
+```bash
+cd frontend
+npm install
+npm run dev       # http://localhost:3000
+```
 
+### Backend
+```bash
+cd backend
+npm install
+cp .env.example .env   # fill in Supabase credentials
+npm run dev            # http://localhost:4000
+```
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+## Docs
+
+Frontend README: [frontend/README.md](frontend/README.md)
