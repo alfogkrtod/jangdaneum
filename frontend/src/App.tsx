@@ -130,16 +130,20 @@ export default function App() {
       setSession(s)
       setAuthLoading(false)
       if (s) {
-        loadProfile(s.user.id).then(setProfile)
-        setCurrentScreen('MainTabs')
+        loadProfile(s.user.id).then(p => {
+          setProfile(p)
+          setCurrentScreen(p.motto ? 'MainTabs' : 'Onboarding')
+        })
       }
     })
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, s) => {
       setSession(s)
       if (event === 'SIGNED_IN' && s) {
-        loadProfile(s.user.id).then(setProfile)
-        setCurrentScreen('Onboarding')
+        loadProfile(s.user.id).then(p => {
+          setProfile(p)
+          setCurrentScreen(p.motto ? 'MainTabs' : 'Onboarding')
+        })
       } else if (event === 'SIGNED_OUT') {
         setProfile(defaultProfile)
         setCurrentScreen('Splash')
