@@ -1,0 +1,27 @@
+{
+  "expo": {
+    "name": "장단:음 (Jangdan:um)",
+    "slug": "jangdan-um",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#f8faf0"
+    },
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#f8faf0"
+      },
+      "package": "com.rebalai.jangdanum"
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    }
+  }
+}

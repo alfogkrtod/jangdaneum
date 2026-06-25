@@ -1,0 +1,6 @@
+{
+  "name": "장단:음 (Jangdan:um)",
+  "description": "An organic modern rhythm and schedule balancing application powered by AI (RebalAI) to optimize your daily focus, rest, and wellness.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
