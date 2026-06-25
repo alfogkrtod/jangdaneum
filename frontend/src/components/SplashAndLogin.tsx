@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Mail, Lock, Eye, EyeOff, Sparkles, MessageCircle, ArrowLeft, Camera, Loader2, UploadCloud, User, CheckCircle2, ChevronRight, RefreshCw, X, Check } from 'lucide-react';
 import { UserProfile } from '../types';
+import { supabase } from '../lib/supabase';
 
 interface SplashAndLoginProps {
   onLoginSuccess: () => void;
@@ -84,14 +85,16 @@ export default function SplashAndLogin({ onLoginSuccess, onUpdateProfile }: Spla
   };
 
   // Submit Login
-  const handleLoginSubmit = (e: React.FormEvent) => {
+  const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Simulate standard log in success
-    onLoginSuccess();
+    const { error } = await supabase.auth.signInWithPassword({ email, password })
+    if (error) {
+      alert(error.message)
+    }
   };
 
   // Submit Custom Sign Up
-  const handleSignUpSubmit = (e: React.FormEvent) => {
+  const handleSignUpSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!signupName.trim()) {
       alert('이름을 입력해 주세요.');
@@ -112,23 +115,34 @@ export default function SplashAndLogin({ onLoginSuccess, onUpdateProfile }: Spla
 
     setSocialLoading({ active: true, provider: 'signup' });
 
-    setTimeout(() => {
-      // Save data to global state
+    const { error } = await supabase.auth.signUp({
+      email: signupEmail,
+      password: signupPassword,
+      options: { data: { name: signupName } }
+    })
+
+    if (error) {
+      setSocialLoading({ active: false, provider: null })
+      alert(error.message)
+      return
+    }
+
+    if (photoPreview) {
       onUpdateProfile({
         name: signupName,
-        avatar: photoPreview || 'https://api.dicebear.com/7.x/adventurer/svg?seed=' + encodeURIComponent(signupName),
+        avatar: photoPreview,
         googleSynced: false,
         appleSynced: false
-      });
-      setSocialLoading({ active: false, provider: null });
-      onLoginSuccess();
-    }, 1800);
+      })
+    }
   };
 
-  // Google Login Simulator
-  const handleGoogleLogin = () => {
-    setSocialLoginType('GOOGLE');
-    setSocialInnerLoading(false);
+  // Google Login
+  const handleGoogleLogin = async () => {
+    await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: { redirectTo: window.location.origin }
+    })
   };
 
   // Kakao Login Simulator
@@ -189,22 +203,6 @@ export default function SplashAndLogin({ onLoginSuccess, onUpdateProfile }: Spla
       {/* Social Authentication Loading Overlay */}
       {socialLoading.active && (
         <div className="absolute inset-0 z-50 bg-[#f8faf0]/95 backdrop-blur-md flex flex-col items-center justify-center p-6 text-center animate-fade-in">
-          {socialLoading.provider === 'google' && (
-            <div className="space-y-6 max-w-xs">
-              <div className="w-20 h-20 mx-auto rounded-full bg-white shadow-md flex items-center justify-center p-4">
-                <div className="w-12 h-12" style={{ backgroundImage: "url('https://lh3.googleusercontent.com/aida-public/AB6AXuCyjWmHT6am4HV5V7WQII0DE---xUdWrXtEB45Z-fTrUx6ByRQECQA-ijbeKN4e85ayF38WqOJlSZdCRUV5Fz2lFKQW3PB1UbvCJsPUIsPWHs_SyPAuDEgLBc3_KoVOKTFA9Gxxx94XzDF8NNUddxr3WeQgRix0oOpPfXfnb5RwWn9FGHQ9_RYKQFrDzAxUQisaFY29k0S4AIBb9c9kJbgUrlHVZmivywJsuCIvxpfjYzF76HUtgYN3pkQW5E_oqgCyNqizuZ_pIDoh')", backgroundSize: 'contain', backgroundRepeat: 'no-repeat', backgroundPosition: 'center' }} />
-              </div>
-              <div className="space-y-2">
-                <h3 className="text-base font-bold text-[#191d17]">Google 계정으로 로그인 중</h3>
-                <p className="text-xs text-[#346823] font-semibold">moshim668@gmail.com</p>
-                <p className="text-[11px] text-[#72796c] leading-relaxed">OAuth 보안 인증 환경을 통해 연동을 처리하고 리바운스 최적화를 동기화하고 있습니다...</p>
-              </div>
-              <div className="flex justify-center pt-2">
-                <Loader2 className="w-8 h-8 text-[#346823] animate-spin" />
-              </div>
-            </div>
-          )}
-
           {socialLoading.provider === 'kakao' && (
             <div className="space-y-6 max-w-xs">
               <div className="w-20 h-20 mx-auto rounded-full bg-[#FEE500] shadow-md flex items-center justify-center">
@@ -499,131 +497,7 @@ export default function SplashAndLogin({ onLoginSuccess, onUpdateProfile }: Spla
         </p>
       </div>
 
-      {/* Google Social Login Simulation Overlay */}
-      {socialLoginType === 'GOOGLE' && (
-        <div className="absolute inset-0 z-[100] bg-black/55 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
-          <div className="bg-white w-full max-w-sm rounded-2xl shadow-2xl overflow-hidden border border-zinc-200 flex flex-col text-left">
-            {/* Header with browser window simulation controls */}
-            <div className="bg-zinc-100 border-b border-zinc-200 px-4 py-3 flex items-center justify-between">
-              <div className="flex gap-1.5 shrink-0">
-                <div className="w-3 h-3 rounded-full bg-[#ff5f56]" />
-                <div className="w-3 h-3 rounded-full bg-[#ffbd2e]" />
-                <div className="w-3 h-3 rounded-full bg-[#27c93f]" />
-              </div>
-              <span className="text-[10px] text-zinc-500 font-mono truncate max-w-[180px] select-none">
-                accounts.google.com/signin/v2
-              </span>
-              <button 
-                type="button"
-                onClick={() => setSocialLoginType('NONE')}
-                className="text-xs font-bold text-zinc-600 hover:text-zinc-900 transition-colors"
-              >
-                취소
-              </button>
-            </div>
-
-            <div className="p-6 flex-grow flex flex-col justify-center min-h-[380px]">
-              {socialInnerLoading ? (
-                <div className="flex flex-col items-center justify-center text-center space-y-4">
-                  <RefreshCw className="w-10 h-10 text-[#4285F4] animate-spin" />
-                  <div>
-                    <h4 className="text-sm font-bold text-zinc-800">Google 계정 연동 중...</h4>
-                    <p className="text-xs text-zinc-500 mt-1">안전하게 세션 정보와 프로필을 연동하고 있습니다.</p>
-                  </div>
-                </div>
-              ) : (
-                <div className="space-y-5 w-full">
-                  {/* Google Logo */}
-                  <div className="flex justify-center">
-                    <img 
-                      src="https://lh3.googleusercontent.com/aida-public/AB6AXuCyjWmHT6am4HV5V7WQII0DE---xUdWrXtEB45Z-fTrUx6ByRQECQA-ijbeKN4e85ayF38WqOJlSZdCRUV5Fz2lFKQW3PB1UbvCJsPUIsPWHs_SyPAuDEgLBc3_KoVOKTFA9Gxxx94XzDF8NNUddxr3WeQgRix0oOpPfXfnb5RwWn9FGHQ9_RYKQFrDzAxUQisaFY29k0S4AIBb9c9kJbgUrlHVZmivywJsuCIvxpfjYzF76HUtgYN3pkQW5E_oqgCyNqizuZ_pIDoh" 
-                      alt="Google logo"
-                      className="h-10 object-contain animate-pulse"
-                    />
-                  </div>
-
-                  <div className="text-center">
-                    <h3 className="text-base font-bold text-zinc-800">Google 계정으로 로그인</h3>
-                    <p className="text-xs text-zinc-500 mt-0.5">장단:음(RebalAI) 서비스로 이동</p>
-                  </div>
-
-                  {/* Account Selection Box */}
-                  <div className="space-y-2 pt-2">
-                    <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block px-1">계정 선택</span>
-                    
-                    <div className="border border-zinc-200 rounded-xl overflow-hidden divide-y divide-zinc-200">
-                      {/* Account Option 1: Active user email */}
-                      <button 
-                        type="button"
-                        onClick={() => {
-                          setSocialInnerLoading(true);
-                          setTimeout(() => {
-                            onUpdateProfile({
-                              name: 'moshim668',
-                              avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=200',
-                              googleSynced: true,
-                              appleSynced: false
-                            });
-                            setSocialInnerLoading(false);
-                            setSocialLoginType('NONE');
-                            onLoginSuccess();
-                          }, 1200);
-                        }}
-                        className="w-full flex items-center gap-3 p-3 bg-white hover:bg-zinc-50 text-left transition-all active:bg-zinc-100"
-                      >
-                        <div className="w-8 h-8 rounded-full bg-blue-500 text-white flex items-center justify-center font-bold text-xs shrink-0">
-                          M
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-xs font-bold text-zinc-800 truncate">moshim668</p>
-                          <p className="text-[10px] text-zinc-500 truncate">moshim668@gmail.com</p>
-                        </div>
-                        <ChevronRight className="w-4 h-4 text-zinc-400 shrink-0" />
-                      </button>
-
-                      {/* Account Option 2: Default Demo User */}
-                      <button 
-                        type="button"
-                        onClick={() => {
-                          setSocialInnerLoading(true);
-                          setTimeout(() => {
-                            onUpdateProfile({
-                              name: '홍길동 (데모 계정)',
-                              avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=200',
-                              googleSynced: true,
-                              appleSynced: false
-                            });
-                            setSocialInnerLoading(false);
-                            setSocialLoginType('NONE');
-                            onLoginSuccess();
-                          }, 1200);
-                        }}
-                        className="w-full flex items-center gap-3 p-3 bg-white hover:bg-zinc-50 text-left transition-all active:bg-zinc-100"
-                      >
-                        <div className="w-8 h-8 rounded-full bg-[#346823] text-white flex items-center justify-center font-bold text-xs shrink-0">
-                          G
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-xs font-bold text-zinc-800 truncate">홍길동 (데모 계정)</p>
-                          <p className="text-[10px] text-zinc-500 truncate">demo_user@gmail.com</p>
-                        </div>
-                        <ChevronRight className="w-4 h-4 text-zinc-400 shrink-0" />
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Privacy Statement */}
-                  <p className="text-[9px] text-zinc-400 leading-relaxed text-center pt-2">
-                    계속 진행하려면 Google에서 귀하의 이름, 이메일 주소, 언어 설정, 프로필 사진을 장단:음 서비스와 공유하는 데 동의하게 됩니다.
-                  </p>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* KakaoTalk Social Login Simulation Overlay */}
+      {/* KakaoTalk Social Login Simulation Overlay (kept as mock for now) */}
       {socialLoginType === 'KAKAO' && (
         <div className="absolute inset-0 z-[100] bg-black/55 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
           <div className="bg-[#FEE500] w-full max-w-sm rounded-2xl shadow-2xl overflow-hidden border border-amber-400 flex flex-col text-left text-[#3C1E1E]">
