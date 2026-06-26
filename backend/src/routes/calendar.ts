@@ -54,6 +54,16 @@ export function toGoogleEvent(event: { title: string; date: string; time: string
   }
 }
 
+router.get('/status', requireAuth, async (req: AuthRequest, res) => {
+  const { data } = await supabaseAdmin
+    .from('calendar_tokens')
+    .select('id')
+    .eq('user_id', req.user!.id)
+    .maybeSingle()
+
+  res.json({ success: true, data: { connected: !!data } })
+})
+
 router.get('/auth-url', requireAuth, async (req: AuthRequest, res) => {
   const state = Buffer.from(JSON.stringify({ userId: req.user!.id, ts: Date.now() })).toString('base64')
 

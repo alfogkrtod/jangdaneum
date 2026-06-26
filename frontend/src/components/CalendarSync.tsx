@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { RefreshCw, Calendar, ArrowRight, ShieldCheck, Sparkles, Check, Loader2, X, AlertCircle } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { RefreshCw, Calendar, ArrowRight, ShieldCheck, Sparkles, Check, AlertCircle } from 'lucide-react';
 import { UserProfile, CalendarEvent } from '../types';
 import { supabase } from '../lib/supabase';
 
@@ -19,40 +19,59 @@ export default function CalendarSync({ profile, onUpdateProfile, onComplete, onI
   const [authLoading, setAuthLoading] = useState(false);
   const [syncStatus, setSyncStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [importedCount, setImportedCount] = useState(0);
+  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     setGoogleConnected(profile.googleSynced);
   }, [profile.googleSynced]);
 
   useEffect(() => {
-    const handleMessage = (e: MessageEvent) => {
-      if (e.data?.type === 'calendar_connected') {
-        refreshProfile();
-      }
+    return () => {
+      if (pollingRef.current) clearInterval(pollingRef.current);
     };
-    window.addEventListener('message', handleMessage);
-    return () => window.removeEventListener('message', handleMessage);
   }, []);
-
-  const refreshProfile = async () => {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session) return;
-
-    const { data } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', session.user.id)
-      .single();
-
-    if (data?.google_synced) {
-      setGoogleConnected(true);
-      onUpdateProfile({ googleSynced: true });
-    }
-  };
 
   const getAccessToken = async (): Promise<string | null> => {
     const { data: { session } } = await supabase.auth.getSession();
     return session?.access_token || null;
+  };
+
+  const checkConnected = async (): Promise<boolean> => {
+    const token = await getAccessToken();
+    if (!token) return false;
+    try {
+      const res = await fetch(`${API_BASE}/api/calendar/status`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const json = await res.json();
+      return json.success && json.data.connected;
+    } catch {
+      return false;
+    }
+  };
+
+  const showConnected = () => {
+    setGoogleConnected(true);
+    onUpdateProfile({ googleSynced: true });
+    if (pollingRef.current) {
+      clearInterval(pollingRef.current);
+      pollingRef.current = null;
+    }
+  };
+
+  const startPolling = () => {
+    if (pollingRef.current) return;
+    let attempts = 0;
+    pollingRef.current = setInterval(async () => {
+      attempts++;
+      const connected = await checkConnected();
+      if (connected) {
+        showConnected();
+      } else if (attempts >= 30) {
+        if (pollingRef.current) clearInterval(pollingRef.current);
+        pollingRef.current = null;
+      }
+    }, 2000);
   };
 
   const handleGoogleClick = async () => {
@@ -79,7 +98,9 @@ export default function CalendarSync({ profile, onUpdateProfile, onComplete, onI
         'width=600,height=700,left=200,top=100'
       );
 
-      if (!popup) {
+      if (popup) {
+        startPolling();
+      } else {
         alert('Popup blocked. Please allow popups for this site.');
       }
     } catch (err) {
@@ -150,7 +171,7 @@ export default function CalendarSync({ profile, onUpdateProfile, onComplete, onI
         <div className="flex flex-col items-center py-4">
           <div className="relative w-40 h-40 flex items-center justify-center">
             <div className={`absolute inset-0 border border-dashed border-[#c1c9b9] rounded-full ${syncing ? 'animate-spin' : ''}`} style={{ animationDuration: '20s' }} />
-            <div className="relative z-10 w-24 h-24 bg-[#346823] rounded-[24px] flex flex-col items-center justify-center shadow-lg transform hover:scale-105 transition-transform">
+            <div className="relative z-10 w-24 h-24 bg-[#346823] rounded-[24px] flex flex-col items-center justify-center shadow-lg">
               <Calendar className="w-11 h-11 text-white" />
             </div>
             <div className={`absolute -top-1 -right-1 w-11 h-11 rounded-xl flex items-center justify-center shadow-md transition-all ${
