@@ -68,14 +68,7 @@ const defaultProfile: UserProfile = {
   theme: 'organic'
 };
 
-async function getAccessToken(): Promise<string | null> {
-  const { data: { session } } = await supabase.auth.getSession();
-  return session?.access_token || null;
-}
-
-async function loadEventsFromApi(): Promise<CalendarEvent[]> {
-  const token = await getAccessToken();
-  if (!token) return [];
+async function loadEventsFromApi(token: string): Promise<CalendarEvent[]> {
   try {
     const res = await fetch(`${API_BASE}/api/events`, {
       headers: { Authorization: `Bearer ${token}` },
@@ -87,9 +80,7 @@ async function loadEventsFromApi(): Promise<CalendarEvent[]> {
   }
 }
 
-async function apiPostEvent(event: Partial<CalendarEvent>): Promise<CalendarEvent | null> {
-  const token = await getAccessToken();
-  if (!token) return null;
+async function apiPostEvent(token: string, event: Partial<CalendarEvent>): Promise<CalendarEvent | null> {
   try {
     const res = await fetch(`${API_BASE}/api/events`, {
       method: 'POST',
@@ -103,9 +94,7 @@ async function apiPostEvent(event: Partial<CalendarEvent>): Promise<CalendarEven
   }
 }
 
-async function apiPutEvent(id: string, updates: Partial<CalendarEvent>): Promise<boolean> {
-  const token = await getAccessToken();
-  if (!token) return false;
+async function apiPutEvent(token: string, id: string, updates: Partial<CalendarEvent>): Promise<boolean> {
   try {
     const res = await fetch(`${API_BASE}/api/events/${id}`, {
       method: 'PUT',
@@ -187,7 +176,7 @@ export default function App() {
           setProfile(p)
           setCurrentScreen(p.motto ? 'MainTabs' : 'Onboarding')
         })
-        loadEventsFromApi().then(setEvents)
+        loadEventsFromApi(s.access_token).then(setEvents)
       }
     })
 
@@ -198,7 +187,7 @@ export default function App() {
           setProfile(p)
           setCurrentScreen(p.motto ? 'MainTabs' : 'Onboarding')
         })
-        loadEventsFromApi().then(setEvents)
+        loadEventsFromApi(s.access_token).then(setEvents)
       } else if (event === 'SIGNED_OUT') {
         setProfile(defaultProfile)
         setEvents([])
@@ -325,7 +314,7 @@ export default function App() {
     if (!event) return;
     const newType = event.type === 'fixed' ? 'flexible' : 'fixed';
     setEvents(events.map(e => e.id === id ? { ...e, type: newType } : e));
-    apiPutEvent(id, { type: newType });
+    if (session?.access_token) apiPutEvent(session.access_token, id, { type: newType });
   };
 
   const handleTogglePremium = () => {
@@ -348,7 +337,7 @@ export default function App() {
     setEvents(prev => [...prev, fresh]);
     setCurrentScreen('MainTabs');
 
-    apiPostEvent({
+    if (session?.access_token) apiPostEvent(session.access_token, {
       title: fresh.title,
       type: fresh.type,
       date: fresh.date,
@@ -374,7 +363,7 @@ export default function App() {
         return e;
       });
       setEvents(updated);
-      flexibleEvents.slice(0, 2).forEach(e => apiPutEvent(e.id, { time: e.id === flexibleEvents[0]?.id ? '15:30' : '16:00', description: e.id === flexibleEvents[0]?.id ? '휴식 확보를 위해 오후 늦게 시작' : '스트레스 방지를 위해 다음날로 이월' }));
+      if (session?.access_token) flexibleEvents.slice(0, 2).forEach(e => apiPutEvent(session.access_token!, e.id, { time: e.id === flexibleEvents[0]?.id ? '15:30' : '16:00', description: e.id === flexibleEvents[0]?.id ? '휴식 확보를 위해 오후 늦게 시작' : '스트레스 방지를 위해 다음날로 이월' }));
       setSimulatorStatus('Calm Recovery Active');
     } else if (proposal === 'sprint') {
       const updated = events.map(e => {
@@ -383,10 +372,10 @@ export default function App() {
         return e;
       });
       setEvents(updated);
-      flexibleEvents.slice(0, 2).forEach(e => apiPutEvent(e.id, { time: e.id === flexibleEvents[0]?.id ? '11:00' : '13:00', description: e.id === flexibleEvents[0]?.id ? '에너지가 충만한 아침 타임으로 앞당김' : '오후 집중 오피스 싱크업' }));
+      if (session?.access_token) flexibleEvents.slice(0, 2).forEach(e => apiPutEvent(session.access_token!, e.id, { time: e.id === flexibleEvents[0]?.id ? '11:00' : '13:00', description: e.id === flexibleEvents[0]?.id ? '에너지가 충만한 아침 타임으로 앞당김' : '오후 집중 오피스 싱크업' }));
       setSimulatorStatus('Sprint mode applied');
     } else {
-      loadEventsFromApi().then(setEvents);
+      if (session?.access_token) loadEventsFromApi(session.access_token).then(setEvents);
     }
   };
 
@@ -522,7 +511,7 @@ export default function App() {
             onClick={() => {
               setCurrentScreen('Splash');
               setActiveTab('schedule');
-              loadEventsFromApi().then(setEvents);
+              if (session?.access_token) loadEventsFromApi(session.access_token).then(setEvents);
             }}
             className="bg-white/80 border border-[#c1c9b9] hover:bg-[#edefe5] p-2 rounded-xl text-xs font-bold text-[#346823] flex items-center gap-1.5 shadow-sm active:scale-95 transition-all"
             title="리셋 시뮬레이션"
