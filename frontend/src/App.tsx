@@ -20,6 +20,8 @@ import UserProfileView from './components/UserProfileView';
 import AddEventForm from './components/AddEventForm';
 import DailySummaryReport from './components/DailySummaryReport';
 
+const API_BASE = 'http://localhost:4000';
+
 // Predefined event parameters for quick mock testing
 const eventKeywords: { [key: string]: { duration: number; time: string; desc: string } } = {
   '매주 수학 공부': { duration: 90, time: '13:00', desc: '기말고사 대비 기하와 벡터 킬러 문항 정복' },
@@ -65,6 +67,57 @@ const defaultProfile: UserProfile = {
   language: 'ko',
   theme: 'organic'
 };
+
+async function getAccessToken(): Promise<string | null> {
+  const { data: { session } } = await supabase.auth.getSession();
+  return session?.access_token || null;
+}
+
+async function loadEventsFromApi(): Promise<CalendarEvent[]> {
+  const token = await getAccessToken();
+  if (!token) return [];
+  try {
+    const res = await fetch(`${API_BASE}/api/events`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const json = await res.json();
+    return json.success ? json.data : [];
+  } catch {
+    return [];
+  }
+}
+
+async function apiPostEvent(event: Partial<CalendarEvent>): Promise<CalendarEvent | null> {
+  const token = await getAccessToken();
+  if (!token) return null;
+  try {
+    const res = await fetch(`${API_BASE}/api/events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify(event),
+    });
+    const json = await res.json();
+    return json.success ? json.data : null;
+  } catch {
+    return null;
+  }
+}
+
+async function apiPutEvent(id: string, updates: Partial<CalendarEvent>): Promise<boolean> {
+  const token = await getAccessToken();
+  if (!token) return false;
+  try {
+    const res = await fetch(`${API_BASE}/api/events/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify(updates),
+    });
+    const json = await res.json();
+    return json.success;
+  } catch {
+    return false;
+  }
+}
 
 async function loadProfile(userId: string): Promise<UserProfile> {
   const { data, error } = await supabase
@@ -134,6 +187,7 @@ export default function App() {
           setProfile(p)
           setCurrentScreen(p.motto ? 'MainTabs' : 'Onboarding')
         })
+        loadEventsFromApi().then(setEvents)
       }
     })
 
@@ -144,8 +198,10 @@ export default function App() {
           setProfile(p)
           setCurrentScreen(p.motto ? 'MainTabs' : 'Onboarding')
         })
+        loadEventsFromApi().then(setEvents)
       } else if (event === 'SIGNED_OUT') {
         setProfile(defaultProfile)
+        setEvents([])
         setCurrentScreen('Splash')
       }
     })
@@ -192,11 +248,7 @@ export default function App() {
   const activeThemeStyles = themes[profile.theme || 'organic'] as React.CSSProperties;
 
   // Events State
-  const [events, setEvents] = useState<CalendarEvent[]>([
-    { id: '1', title: '기말고사 (수학)', type: 'fixed', date: '2026-06-25', time: '09:00', duration: 120, description: '중요 시험 - 절대 수정 불가', category: 'hardworking' },
-    { id: '2', title: '중간 발표 준비', type: 'flexible', date: '2026-06-25', time: '14:00', duration: 120, description: 'AI 최적화 가능 시간', category: 'learning' },
-    { id: '3', title: '팀 프로젝트 회의', type: 'flexible', date: '2026-06-25', time: '19:00', duration: 90, description: '온라인 싱크업 미팅', category: 'hardworking' }
-  ]);
+  const [events, setEvents] = useState<CalendarEvent[]>([]);
 
   // Current selected day in DayPicker
   const [currentDay, setCurrentDay] = useState('2026-06-25');
@@ -269,7 +321,11 @@ export default function App() {
   };
 
   const handleToggleFixed = (id: string) => {
-    setEvents(events.map(e => e.id === id ? { ...e, type: e.type === 'fixed' ? 'flexible' : 'fixed' } : e));
+    const event = events.find(e => e.id === id);
+    if (!event) return;
+    const newType = event.type === 'fixed' ? 'flexible' : 'fixed';
+    setEvents(events.map(e => e.id === id ? { ...e, type: newType } : e));
+    apiPutEvent(id, { type: newType });
   };
 
   const handleTogglePremium = () => {
@@ -279,7 +335,7 @@ export default function App() {
   const handleAddEvent = (newEvent: Partial<CalendarEvent>) => {
     const titleKey = newEvent.title || '';
     const fresh: CalendarEvent = {
-      id: String(events.length + 1),
+      id: `temp-${Date.now()}`,
       title: newEvent.title || '새 일정',
       type: newEvent.type || 'flexible',
       date: newEvent.date || currentDay,
@@ -289,34 +345,48 @@ export default function App() {
       category: newEvent.category || 'hardworking'
     };
 
-    setEvents([...events, fresh]);
+    setEvents(prev => [...prev, fresh]);
     setCurrentScreen('MainTabs');
+
+    apiPostEvent({
+      title: fresh.title,
+      type: fresh.type,
+      date: fresh.date,
+      time: fresh.time,
+      duration: fresh.duration,
+      description: fresh.description,
+      category: fresh.category,
+    }).then(saved => {
+      if (saved) {
+        setEvents(prev => prev.map(e => e.id === fresh.id ? { ...saved, id: saved.id } : e));
+      }
+    });
   };
 
   const handleApplyProposal = (proposal: RebalanceProposal) => {
     setActiveProposal(proposal);
-    // Real-time Reschedule events depending on proposal type
+    const flexibleEvents = events.filter(e => e.type !== 'fixed');
+
     if (proposal === 'recovery') {
-      setEvents(events.map(e => {
-        if (e.id === '2') return { ...e, time: '15:30', description: '휴식 확보를 위해 오후 늦게 시작' };
-        if (e.id === '3') return { ...e, time: '16:00', date: '2026-06-26', description: '스트레스 방지를 위해 금요일로 이월' };
+      const updated = events.map(e => {
+        if (e.id === flexibleEvents[0]?.id) return { ...e, time: '15:30', description: '휴식 확보를 위해 오후 늦게 시작' };
+        if (e.id === flexibleEvents[1]?.id) return { ...e, time: '16:00', date: currentDay, description: '스트레스 방지를 위해 다음날로 이월' };
         return e;
-      }));
+      });
+      setEvents(updated);
+      flexibleEvents.slice(0, 2).forEach(e => apiPutEvent(e.id, { time: e.id === flexibleEvents[0]?.id ? '15:30' : '16:00', description: e.id === flexibleEvents[0]?.id ? '휴식 확보를 위해 오후 늦게 시작' : '스트레스 방지를 위해 다음날로 이월' }));
       setSimulatorStatus('Calm Recovery Active');
     } else if (proposal === 'sprint') {
-      setEvents(events.map(e => {
-        if (e.id === '2') return { ...e, time: '11:00', description: '에너지가 충만한 아침 타임으로 앞당김' };
-        if (e.id === '3') return { ...e, time: '13:00', description: '오후 집중 오피스 싱크업' };
+      const updated = events.map(e => {
+        if (e.id === flexibleEvents[0]?.id) return { ...e, time: '11:00', description: '에너지가 충만한 아침 타임으로 앞당김' };
+        if (e.id === flexibleEvents[1]?.id) return { ...e, time: '13:00', description: '오후 집중 오피스 싱크업' };
         return e;
-      }));
+      });
+      setEvents(updated);
+      flexibleEvents.slice(0, 2).forEach(e => apiPutEvent(e.id, { time: e.id === flexibleEvents[0]?.id ? '11:00' : '13:00', description: e.id === flexibleEvents[0]?.id ? '에너지가 충만한 아침 타임으로 앞당김' : '오후 집중 오피스 싱크업' }));
       setSimulatorStatus('Sprint mode applied');
     } else {
-      // restore default Wed schedule
-      setEvents([
-        { id: '1', title: '기말고사 (수학)', type: 'fixed', date: '2026-06-24', time: '09:00', duration: 120, description: '중요 시험 - 절대 수정 불가' },
-        { id: '2', title: '중간 발표 준비', type: 'flexible', date: '2026-06-24', time: '14:00', duration: 120, description: 'AI 최적화 가능 시간' },
-        { id: '3', title: '팀 프로젝트 회의', type: 'flexible', date: '2026-06-24', time: '19:00', duration: 90, description: '온라인 싱크업 미팅' }
-      ]);
+      loadEventsFromApi().then(setEvents);
     }
   };
 
@@ -452,11 +522,7 @@ export default function App() {
             onClick={() => {
               setCurrentScreen('Splash');
               setActiveTab('schedule');
-              setEvents([
-                { id: '1', title: '기말고사 (수학)', type: 'fixed', date: '2026-06-25', time: '09:00', duration: 120, description: '중요 시험 - 절대 수정 불가' },
-                { id: '2', title: '중간 발표 준비', type: 'flexible', date: '2026-06-25', time: '14:00', duration: 120, description: 'AI 최적화 가능 시간' },
-                { id: '3', title: '팀 프로젝트 회의', type: 'flexible', date: '2026-06-25', time: '19:00', duration: 90, description: '온라인 싱크업 미팅' }
-              ]);
+              loadEventsFromApi().then(setEvents);
             }}
             className="bg-white/80 border border-[#c1c9b9] hover:bg-[#edefe5] p-2 rounded-xl text-xs font-bold text-[#346823] flex items-center gap-1.5 shadow-sm active:scale-95 transition-all"
             title="리셋 시뮬레이션"
@@ -524,12 +590,7 @@ export default function App() {
                     onUpdateProfile={onUpdateProfile} 
                     onComplete={() => setCurrentScreen('MainTabs')} 
                     onImportEvents={(imported) => {
-                      // Avoid duplicate importations
-                      setEvents(prev => {
-                        const existingIds = new Set(prev.map(e => e.id));
-                        const filtered = imported.filter(e => !existingIds.has(e.id));
-                        return [...prev, ...filtered];
-                      });
+                      if (imported.length > 0) setEvents(imported);
                     }}
                   />
                 )}
