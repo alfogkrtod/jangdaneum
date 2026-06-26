@@ -692,7 +692,7 @@ export default function ScheduleView({
       </div>
 
       {/* Floating Action Buttons */}
-      <div className="fixed bottom-24 right-6 flex flex-col gap-3 z-50">
+      <div className="absolute bottom-24 right-6 flex flex-col gap-3 z-50">
         <button 
           onClick={onSync}
           className="w-12 h-12 bg-[var(--theme-card)] text-[var(--theme-primary)] rounded-full shadow-lg border border-[var(--theme-border)]/50 flex items-center justify-center hover:bg-[var(--theme-border)]/20 transition-transform active:rotate-180 duration-500"
