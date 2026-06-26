@@ -21,7 +21,7 @@ export interface ApiResponse<T = unknown> {
 
 // Calendar Event Analysis Model
 export interface EventAnalysis {
-  aiCategory: string; // Event category (e.g., Study, Rest, Social)
+  aiCategory: string; // Event category (e.g. Academic, Work, Rest, Social, Health)
   cognitiveLoadScore: number; // Cognitive load score represented as an integer from 1 - 5
   reasoning: string; // The AI's reasoning for assigning the specific category and score
 }
