@@ -15,7 +15,44 @@ const oauth2Client = new google.auth.OAuth2(
   GOOGLE_REDIRECT_URI
 )
 
-const SCOPES = ['https://www.googleapis.com/auth/calendar.readonly']
+export const SCOPES = ['https://www.googleapis.com/auth/calendar']
+
+export async function getGoogleCalendarForUser(userId: string) {
+  const { data, error } = await supabaseAdmin
+    .from('calendar_tokens')
+    .select('refresh_token')
+    .eq('user_id', userId)
+    .single()
+
+  if (error || !data) return null
+
+  const oauth = new google.auth.OAuth2(
+    GOOGLE_CLIENT_ID,
+    GOOGLE_CLIENT_SECRET,
+    GOOGLE_REDIRECT_URI
+  )
+  oauth.setCredentials({ refresh_token: data.refresh_token })
+  return google.calendar({ version: 'v3', auth: oauth })
+}
+
+export function toGoogleEvent(event: { title: string; date: string; time: string; duration: number; description?: string }) {
+  const startStr = `${event.date}T${event.time}:00`
+  const startDate = new Date(startStr)
+  const endDate = new Date(startDate.getTime() + event.duration * 60000)
+
+  return {
+    summary: event.title,
+    description: event.description || '',
+    start: {
+      dateTime: startDate.toISOString(),
+      timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    },
+    end: {
+      dateTime: endDate.toISOString(),
+      timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    },
+  }
+}
 
 router.get('/auth-url', requireAuth, async (req: AuthRequest, res) => {
   const state = Buffer.from(JSON.stringify({ userId: req.user!.id, ts: Date.now() })).toString('base64')
@@ -107,7 +144,10 @@ router.post('/sync', requireAuth, async (req: AuthRequest, res) => {
     const calendar = google.calendar({ version: 'v3', auth: oauth2Client })
     const now = new Date()
     const weekLater = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000)
+    let imported = 0
+    let pushed = 0
 
+    // 1. Import Google events not in local DB
     const response = await calendar.events.list({
       calendarId: 'primary',
       timeMin: now.toISOString(),
@@ -117,7 +157,6 @@ router.post('/sync', requireAuth, async (req: AuthRequest, res) => {
     })
 
     const gEvents = response.data.items || []
-    let imported = 0
 
     for (const gEvent of gEvents) {
       const title = gEvent.summary || '(No Title)'
@@ -158,7 +197,34 @@ router.post('/sync', requireAuth, async (req: AuthRequest, res) => {
       if (!insertError) imported++
     }
 
-    res.json({ success: true, data: { imported } })
+    // 2. Push local events without google_event_id to Google Calendar
+    const { data: localEvents } = await supabaseAdmin
+      .from('events')
+      .select('id, title, date, time, duration, description')
+      .eq('user_id', userId)
+      .is('google_event_id', null)
+
+    if (localEvents) {
+      for (const evt of localEvents) {
+        try {
+          const gEvent = await calendar.events.insert({
+            calendarId: 'primary',
+            requestBody: toGoogleEvent(evt),
+          })
+          if (gEvent.data.id) {
+            await supabaseAdmin
+              .from('events')
+              .update({ google_event_id: gEvent.data.id, updated_at: new Date().toISOString() })
+              .eq('id', evt.id)
+            pushed++
+          }
+        } catch {
+          // Skip events that fail to push
+        }
+      }
+    }
+
+    res.json({ success: true, data: { imported, pushed } })
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message || 'Failed to sync Google Calendar' })
   }
